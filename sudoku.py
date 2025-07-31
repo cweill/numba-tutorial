@@ -224,6 +224,214 @@ def solveWithMRV(board, possible):
     return False
 
 
+# Ultra-optimized Sudoku Solver with bitwise operations and advanced techniques
+def solveSudokuUltraOptimized(board):
+    # Use bitwise representation: each cell has 9-bit int where bit i = digit i+1 possible
+    possible = [[0 for _ in range(9)] for _ in range(9)]
+    
+    # Initialize possibilities (bits 0-8 represent digits 1-9)
+    for i in range(9):
+        for j in range(9):
+            if board[i][j] == 0:
+                possible[i][j] = 0b111111111  # All 9 digits possible
+    
+    # Remove initial constraints
+    for i in range(9):
+        for j in range(9):
+            if board[i][j] != 0:
+                updateConstraintsBitwise(board[i][j], i, j, possible)
+    
+    # Apply constraint propagation
+    if not propagateConstraintsBitwise(board, possible):
+        return board
+    
+    # Solve with enhanced MRV + forward checking
+    if solveWithMRVBitwise(board, possible):
+        return board
+    return board
+
+
+def updateConstraintsBitwise(value, row, col, possible):
+    """Remove value from constraints using bitwise operations"""
+    bit_mask = ~(1 << (value - 1))  # Mask to clear bit for this value
+    
+    # Clear this cell's possibilities
+    possible[row][col] = 0
+    
+    # Remove from row, column, and box
+    for i in range(9):
+        possible[row][i] &= bit_mask  # Row
+        possible[i][col] &= bit_mask  # Column
+    
+    # Box constraints
+    box_row, box_col = 3 * (row // 3), 3 * (col // 3)
+    for r in range(box_row, box_row + 3):
+        for c in range(box_col, box_col + 3):
+            possible[r][c] &= bit_mask
+
+
+def propagateConstraintsBitwise(board, possible):
+    """Propagate constraints using bitwise operations"""
+    changed = True
+    while changed:
+        changed = False
+        
+        # Fill cells with only one possibility (naked singles)
+        for row in range(9):
+            for col in range(9):
+                if board[row][col] == 0:
+                    bits = possible[row][col]
+                    if bits == 0:
+                        return False  # Dead end
+                    
+                    # Check if only one bit is set (power of 2)
+                    if bits & (bits - 1) == 0 and bits != 0:
+                        # Find which digit this is using bit manipulation
+                        digit = (bits & -bits).bit_length()
+                        
+                        board[row][col] = digit
+                        updateConstraintsBitwise(digit, row, col, possible)
+                        changed = True
+                        break
+            if changed:
+                break
+        
+        # Hidden singles: value that can only go in one place
+        if not changed:
+            changed = findHiddenSinglesBitwise(board, possible)
+    
+    return True
+
+
+def findHiddenSinglesBitwise(board, possible):
+    """Find hidden singles using bitwise operations"""
+    changed = False
+    
+    # Check each digit (1-9)
+    for digit in range(1, 10):
+        bit = 1 << (digit - 1)
+        
+        # Check rows
+        for row in range(9):
+            positions = []
+            for col in range(9):
+                if possible[row][col] & bit:
+                    positions.append(col)
+            
+            if len(positions) == 1:
+                col = positions[0]
+                if board[row][col] == 0:
+                    board[row][col] = digit
+                    updateConstraintsBitwise(digit, row, col, possible)
+                    changed = True
+        
+        # Check columns
+        for col in range(9):
+            positions = []
+            for row in range(9):
+                if possible[row][col] & bit:
+                    positions.append(row)
+            
+            if len(positions) == 1:
+                row = positions[0]
+                if board[row][col] == 0:
+                    board[row][col] = digit
+                    updateConstraintsBitwise(digit, row, col, possible)
+                    changed = True
+        
+        # Check boxes
+        for box_r in range(3):
+            for box_c in range(3):
+                positions = []
+                for r in range(3):
+                    for c in range(3):
+                        row = box_r * 3 + r
+                        col = box_c * 3 + c
+                        if possible[row][col] & bit:
+                            positions.append((row, col))
+                
+                if len(positions) == 1:
+                    row, col = positions[0]
+                    if board[row][col] == 0:
+                        board[row][col] = digit
+                        updateConstraintsBitwise(digit, row, col, possible)
+                        changed = True
+    
+    return changed
+
+
+def solveWithMRVBitwise(board, possible):
+    """Solve using MRV with bitwise operations and forward checking"""
+    # Apply constraint propagation
+    if not propagateConstraintsBitwise(board, possible):
+        return False
+    
+    # Find empty cell with fewest possibilities
+    min_bits = 10
+    best_cell = None
+    
+    for row in range(9):
+        for col in range(9):
+            if board[row][col] == 0:
+                bits = possible[row][col]
+                if bits == 0:
+                    return False  # Dead end
+                
+                # Count set bits (number of possibilities) - Brian Kernighan's algorithm
+                bit_count = 0
+                temp = bits
+                while temp:
+                    bit_count += 1
+                    temp &= temp - 1
+                if bit_count < min_bits:
+                    min_bits = bit_count
+                    best_cell = (row, col)
+                    
+                    # If only one possibility, we'll fill it in propagation
+                    if bit_count == 1:
+                        break
+        if best_cell and min_bits == 1:
+            break
+    
+    if best_cell is None:
+        return True  # Solved
+    
+    row, col = best_cell
+    bits = possible[row][col]
+    
+    # Try each possible digit
+    for digit in range(1, 10):
+        if bits & (1 << (digit - 1)):
+            # Save state efficiently
+            old_board = [r[:] for r in board]
+            old_possible = [r[:] for r in possible]
+            
+            # Make move
+            board[row][col] = digit
+            updateConstraintsBitwise(digit, row, col, possible)
+            
+            # Forward checking: ensure no empty cell has zero possibilities
+            valid = True
+            for r in range(9):
+                for c in range(9):
+                    if board[r][c] == 0 and possible[r][c] == 0:
+                        valid = False
+                        break
+                if not valid:
+                    break
+            
+            if valid and solveWithMRVBitwise(board, possible):
+                return True
+            
+            # Backtrack
+            for i in range(9):
+                for j in range(9):
+                    board[i][j] = old_board[i][j]
+                    possible[i][j] = old_possible[i][j]
+    
+    return False
+
+
 # Alternative implementation with bitwise operations for even better performance
 def solveSudokuBitwise(board):
     """Ultra-optimized version using bitwise operations"""
@@ -309,6 +517,11 @@ if __name__ == "__main__":
     print("\nSolved with optimized solver:")
     solved_optimized = solveSudokuOptimized([row[:] for row in board])
     for row in solved_optimized:
+        print(row)
+
+    print("\nSolved with ultra-optimized solver:")
+    solved_ultra = solveSudokuUltraOptimized([row[:] for row in board])
+    for row in solved_ultra:
         print(row)
 
     print("\nSolved with bitwise solver:")
